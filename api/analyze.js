@@ -223,7 +223,7 @@ Scoring rubric for quality_score (0-10):
 async function callGemini(prompt, apiKey) {
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash-preview-04-17',
+    model: 'gemini-2.5-flash-preview-05-20',
     generationConfig: {
       temperature: 0.3,
       maxOutputTokens: 4096,
