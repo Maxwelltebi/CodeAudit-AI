@@ -223,7 +223,11 @@ Scoring rubric for quality_score (0-10):
 async function callAI(prompt, apiKey) {
   const client = new OpenAI({
     apiKey,
-    baseURL: 'https://openrouter.ai/api/v1'
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: {
+      'HTTP-Referer': 'https://codeaudit-ai.vercel.app',
+      'X-Title': 'CodeAudit AI'
+    }
   });
 
   const makeRequest = async () => {
