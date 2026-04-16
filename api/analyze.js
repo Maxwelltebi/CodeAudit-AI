@@ -226,8 +226,8 @@ async function callAI(prompt, apiKey) {
     baseURL: 'https://openrouter.ai/api/v1'
   });
 
-  const response = await withTimeout(
-    client.chat.completions.create({
+  const makeRequest = async () => {
+    const response = await client.chat.completions.create({
       model: 'google/gemma-4-26b-a4b-it:free',
       messages: [
         {
@@ -239,19 +239,29 @@ async function callAI(prompt, apiKey) {
       temperature: 0.3,
       max_tokens: 2048,
       response_format: { type: 'json_object' }
-    }),
-    55000,
-    'AI API request timed out'
-  );
+    });
+    return response;
+  };
 
-  const text = response.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Empty response from AI');
-
-  try {
-    return JSON.parse(text.trim());
-  } catch {
-    throw new Error('AI returned invalid JSON');
+  // Retry up to 3 times on 429, with increasing backoff
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await withTimeout(makeRequest(), 55000, 'AI API request timed out');
+      const text = response.choices?.[0]?.message?.content;
+      if (!text) throw new Error('Empty response from AI');
+      return JSON.parse(text.trim());
+    } catch (err) {
+      lastError = err;
+      if (err.status === 429 && attempt < 2) {
+        console.log(`Rate limited, retrying in ${(attempt + 1) * 3}s...`);
+        await new Promise(r => setTimeout(r, (attempt + 1) * 3000));
+        continue;
+      }
+      throw err;
+    }
   }
+  throw lastError;
 }
 
 // ============================================
