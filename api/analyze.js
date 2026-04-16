@@ -7,9 +7,9 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 // ============================================
 const GITHUB_API = 'https://api.github.com';
 
-const MAX_FILES_TO_ANALYZE = 10;
+const MAX_FILES_TO_ANALYZE = 6;
 const MAX_FILE_SIZE_BYTES = 100 * 1024; // 100KB per file
-const MAX_TOTAL_CHARS = 25000;          // Total char budget for prompt
+const MAX_TOTAL_CHARS = 12000;          // Total char budget for prompt
 const FUNCTION_TIMEOUT_MS = 25000;      // Hard timeout for the whole function
 
 const BINARY_EXTENSIONS = new Set([
@@ -226,9 +226,8 @@ async function callGemini(prompt, apiKey) {
     model: 'gemini-2.5-flash',
     generationConfig: {
       temperature: 0.3,
-      maxOutputTokens: 4096,
-      responseMimeType: 'application/json',
-      thinkingConfig: { thinkingBudget: 0 }
+      maxOutputTokens: 2048,
+      responseMimeType: 'application/json'
     }
   });
 
