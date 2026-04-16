@@ -238,7 +238,7 @@ async function callGemini(prompt, apiKey) {
       systemInstruction,
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     }),
-    20000,
+    26000,
     'Gemini API request timed out'
   );
 
