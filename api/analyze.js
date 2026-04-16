@@ -259,19 +259,28 @@ async function callZhipu(prompt, apiKey) {
 // ============================================
 
 function handleApiError(error, res) {
-  console.error('API Error:', error.message);
+  // Log full error for Vercel function logs
+  console.error('API Error:', {
+    message: error.message,
+    name: error.name,
+    status: error.status,
+    responseStatus: error.response?.status,
+    stack: error.stack
+  });
 
-  if (error.message.includes('timed out')) {
+  if (error.message?.includes('timed out')) {
     return res.status(504).json({
       error: 'Analysis timed out. The repository might be too large or the AI service is busy.'
     });
   }
 
-  if (error.response) {
-    const status = error.response.status;
+  // OpenAI SDK errors (used by GLM) have error.status directly
+  const status = error.status || error.response?.status;
+
+  if (status) {
     if (status === 401 || status === 403) {
       return res.status(403).json({
-        error: 'GitHub access forbidden. Check token permissions or repo visibility.'
+        error: 'Access forbidden. Check API keys, token permissions, or repo visibility.'
       });
     }
     if (status === 404) {
@@ -281,17 +290,17 @@ function handleApiError(error, res) {
     }
     if (status === 429) {
       return res.status(429).json({
-        error: 'GitHub API rate limit exceeded. Please wait a moment.'
+        error: 'Rate limit exceeded. Please wait a moment and try again.'
       });
     }
     if (status >= 500) {
       return res.status(502).json({
-        error: 'GitHub service unavailable. Please try again later.'
+        error: 'Upstream service unavailable. Please try again later.'
       });
     }
   }
 
-  if (error.message.includes('GLM')) {
+  if (error.message?.includes('GLM') || error.message?.includes('Empty response')) {
     return res.status(502).json({
       error: 'AI analysis failed. The model may be overloaded or the input was invalid.'
     });
@@ -305,7 +314,7 @@ function handleApiError(error, res) {
   }
 
   return res.status(500).json({
-    error: 'An unexpected error occurred during analysis.'
+    error: `An unexpected error occurred: ${error.message || 'Unknown error'}`
   });
 }
 
