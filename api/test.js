@@ -1,25 +1,36 @@
 import axios from 'axios';
 
 export default async function handler(req, res) {
-  const testUrl = 'https://api.github.com/repos/Maxwelltebi/TorchAI';
+  const owner = 'Maxwelltebi';
+  const repo = 'TorchAI';
+  const token = process.env.GITHUB_TOKEN || null;
+  const headers = { Accept: 'application/vnd.github.v3+json' };
+  if (token) headers.Authorization = `token ${token}`;
+
+  const results = {};
+
+  // Test 1: repo metadata
   try {
-    const response = await axios.get(testUrl, {
-      headers: { Accept: 'application/vnd.github.v3+json' }
-    });
-    return res.status(200).json({
-      github_status: response.status,
-      repo: response.data.full_name,
-      private: response.data.private,
-      env_check: {
-        has_gemini_key: !!process.env.GEMINI_API_KEY,
-        has_github_token: !!process.env.GITHUB_TOKEN,
-      }
-    });
+    const r = await axios.get(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+    results.metadata = { status: r.status, name: r.data.full_name, branch: r.data.default_branch };
   } catch (err) {
-    return res.status(500).json({
-      error: err.message,
-      status: err.response?.status,
-      data: err.response?.data
-    });
+    results.metadata = { error: err.message, status: err.response?.status };
   }
+
+  // Test 2: tree
+  try {
+    const branch = results.metadata?.branch || 'main';
+    const r = await axios.get(`https://api.github.com/repos/${owner}/${repo}/git/trees/${branch}?recursive=1`, { headers });
+    results.tree = { status: r.status, file_count: r.data.tree?.length };
+  } catch (err) {
+    results.tree = { error: err.message, status: err.response?.status };
+  }
+
+  results.env = {
+    has_gemini_key: !!process.env.GEMINI_API_KEY,
+    has_github_token: !!process.env.GITHUB_TOKEN,
+    token_prefix: token ? token.substring(0, 10) + '...' : null
+  };
+
+  return res.status(200).json(results);
 }
