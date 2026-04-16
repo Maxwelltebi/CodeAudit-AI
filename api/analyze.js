@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { z } from 'zod';
-import OpenAI from 'openai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // ============================================
 // CONFIGURATION
@@ -220,37 +220,35 @@ Scoring rubric for quality_score (0-10):
   0: Broken or empty`;
 }
 
-async function callZhipu(prompt, apiKey) {
-  const client = new OpenAI({
-    apiKey,
-    baseURL: 'https://api.z.ai/api/paas/v4'
+async function callGemini(prompt, apiKey) {
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-2.5-flash-preview-04-17',
+    generationConfig: {
+      temperature: 0.3,
+      maxOutputTokens: 4096,
+      responseMimeType: 'application/json'
+    }
   });
 
+  const systemInstruction = 'You are an expert senior software engineer performing a code audit. Return ONLY valid JSON — no markdown, no explanation, no preamble, no code fences.';
+
   const response = await withTimeout(
-    client.chat.completions.create({
-      model: 'glm-5.1',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are an expert senior software engineer performing a code audit. Return ONLY valid JSON — no markdown, no explanation, no preamble, no code fences.'
-        },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.3,
-      max_tokens: 4096,
-      response_format: { type: 'json_object' }
+    model.generateContent({
+      systemInstruction,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }]
     }),
     20000,
-    'GLM API request timed out'
+    'Gemini API request timed out'
   );
 
-  const text = response.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Empty response from GLM');
+  const text = response.response?.text();
+  if (!text) throw new Error('Empty response from Gemini');
 
   try {
     return JSON.parse(text.trim());
   } catch {
-    throw new Error('GLM returned invalid JSON');
+    throw new Error('Gemini returned invalid JSON');
   }
 }
 
@@ -300,7 +298,7 @@ function handleApiError(error, res) {
     }
   }
 
-  if (error.message?.includes('GLM') || error.message?.includes('Empty response')) {
+  if (error.message?.includes('Gemini') || error.message?.includes('Empty response')) {
     return res.status(502).json({
       error: 'AI analysis failed. The model may be overloaded or the input was invalid.'
     });
@@ -345,10 +343,10 @@ export default async function handler(req, res) {
   const repo = repoMatch[2];
 
   const githubToken = process.env.GITHUB_TOKEN || null;
-  const zhipuApiKey = process.env.ZHIPU_API_KEY;
+  const geminiApiKey = process.env.GEMINI_API_KEY;
 
-  if (!zhipuApiKey) {
-    console.error('Missing ZHIPU_API_KEY environment variable');
+  if (!geminiApiKey) {
+    console.error('Missing GEMINI_API_KEY environment variable');
     return res.status(500).json({ error: 'Server configuration error.' });
   }
 
@@ -409,17 +407,17 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step E: Build prompt & call GLM
+    // Step E: Build prompt & call Gemini
     const prompt = buildPrompt(`${owner}/${repo}`, tree, filesContent);
     let rawAnalysis;
     try {
-      rawAnalysis = await callZhipu(prompt, zhipuApiKey);
+      rawAnalysis = await callGemini(prompt, geminiApiKey);
     } catch (err) {
       const status = err.status || err.response?.status;
-      console.error('GLM API error:', status, err.message);
-      if (status === 401 || status === 403) return res.status(403).json({ error: 'GLM API key rejected (401/403). Check your ZHIPU_API_KEY on Vercel.' });
-      if (status === 429) return res.status(429).json({ error: 'GLM API rate limit exceeded. Please wait and try again.' });
-      if (status >= 500) return res.status(502).json({ error: 'GLM API is down. Please try again later.' });
+      console.error('Gemini API error:', status, err.message);
+      if (status === 401 || status === 403) return res.status(403).json({ error: 'Gemini API key rejected (401/403). Check your GEMINI_API_KEY on Vercel.' });
+      if (status === 429) return res.status(429).json({ error: 'Gemini API rate limit exceeded. Please wait and try again.' });
+      if (status >= 500) return res.status(502).json({ error: 'Gemini API is down. Please try again later.' });
       throw err;
     }
 
