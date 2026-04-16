@@ -354,13 +354,23 @@ export default async function handler(req, res) {
 
   try {
     // Step A: Fetch repo metadata to get default branch
-    const repoInfo = await withTimeout(
-      retry(() => axios.get(`${GITHUB_API}/repos/${owner}/${repo}`, {
-        headers: githubHeaders(githubToken)
-      })),
-      5000,
-      'GitHub repo metadata request timed out'
-    );
+    let repoInfo;
+    try {
+      repoInfo = await withTimeout(
+        retry(() => axios.get(`${GITHUB_API}/repos/${owner}/${repo}`, {
+          headers: githubHeaders(githubToken)
+        })),
+        5000,
+        'GitHub repo metadata request timed out'
+      );
+    } catch (err) {
+      const status = err.response?.status;
+      console.error('GitHub API error (repo metadata):', status, err.message);
+      if (status === 401 || status === 403) return res.status(403).json({ error: 'GitHub access forbidden. Check your GITHUB_TOKEN permissions.' });
+      if (status === 404) return res.status(404).json({ error: 'Repository not found. Check the URL and ensure it is public.' });
+      if (status === 429) return res.status(429).json({ error: 'GitHub rate limit exceeded. Please wait and try again.' });
+      throw err;
+    }
 
     const defaultBranch = repoInfo.data.default_branch;
 
@@ -399,9 +409,19 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step E: Build prompt & call Gemini
+    // Step E: Build prompt & call GLM
     const prompt = buildPrompt(`${owner}/${repo}`, tree, filesContent);
-    const rawAnalysis = await callZhipu(prompt, zhipuApiKey);
+    let rawAnalysis;
+    try {
+      rawAnalysis = await callZhipu(prompt, zhipuApiKey);
+    } catch (err) {
+      const status = err.status || err.response?.status;
+      console.error('GLM API error:', status, err.message);
+      if (status === 401 || status === 403) return res.status(403).json({ error: 'GLM API key rejected (401/403). Check your ZHIPU_API_KEY on Vercel.' });
+      if (status === 429) return res.status(429).json({ error: 'GLM API rate limit exceeded. Please wait and try again.' });
+      if (status >= 500) return res.status(502).json({ error: 'GLM API is down. Please try again later.' });
+      throw err;
+    }
 
     // Step F: Validate & return
     const analysis = AnalysisSchema.parse(rawAnalysis);
