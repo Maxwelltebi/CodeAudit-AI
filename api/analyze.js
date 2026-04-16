@@ -32,13 +32,17 @@ const AnalysisSchema = z.object({
   strengths: z.array(z.string()).max(10),
   security_flags: z.array(z.object({
     severity: z.enum(['high', 'medium', 'low']),
-    issue: z.string(),
-    file: z.string().nullable()
-  })).max(10),
+    title: z.string(),
+    file: z.string().nullable(),
+    description: z.string(),
+    fix: z.string()
+  })).max(15),
   recommendations: z.array(z.object({
     priority: z.enum(['high', 'medium', 'low']),
-    action: z.string()
-  })).max(10),
+    title: z.string(),
+    description: z.string(),
+    file: z.string().nullable()
+  })).max(15),
   generated_readme: z.string().min(50)
 });
 
@@ -197,9 +201,10 @@ FILE CONTENTS (key files):
 ${filesContext}
 
 INSTRUCTIONS:
-- Reference SPECIFIC files and line-level details where possible (e.g., "In src/utils/auth.js, the token validation lacks expiry checking")
-- For security_flags, always specify which file the issue is in and describe exactly what the vulnerability is and how to fix it
-- For recommendations, be concrete — say exactly what to change, in which file, and why
+- Be a HARSH but fair auditor. Dig deep into every file for issues.
+- Reference SPECIFIC files and approximate line numbers where possible
+- The quality_score MUST be consistent with the number and severity of issues found. If you find multiple security issues or major gaps, the score should reflect that (e.g., 3-5 security flags with medium/high severity should NOT result in a 7+ score)
+- Find AT LEAST 3-5 security flags and 5-8 recommendations for any non-trivial project
 - For strengths, point to specific patterns or files that demonstrate good practices
 - The overview should mention the tech stack, purpose, and overall architecture quality
 - The architecture_summary should describe how components connect, data flows, and any design patterns used
@@ -212,27 +217,37 @@ Return this exact JSON structure:
   "quality_score": 7.4,
   "architecture_summary": "Detailed paragraph about code organization, design patterns, component relationships, and data flow. Reference specific directories and files.",
   "strengths": [
-    "Specific strength referencing file or pattern, e.g.: 'Clean separation of concerns in src/components/ with each component handling a single responsibility'",
-    "Another specific strength",
-    "At least 3-5 strengths"
+    "Specific strength referencing file or pattern (3-5 items)"
   ],
   "security_flags": [
-    { "severity": "high|medium|low", "issue": "Specific description including file path and what the vulnerability is, e.g.: 'SQL injection risk in api/users.js line ~24: user input passed directly to query without sanitization'", "file": "exact/file/path.js" }
+    {
+      "severity": "high|medium|low",
+      "title": "Short title of the issue, e.g.: 'SQL Injection in User Query'",
+      "file": "exact/file/path.js",
+      "description": "A detailed 2-4 sentence explanation of what the vulnerability is, why it's dangerous, and what could happen if exploited. Reference specific code patterns you saw in the file. For example: 'In api/users.js around line 24, user-supplied input from req.body.username is concatenated directly into the SQL query string without parameterization. An attacker could inject malicious SQL to dump the entire users table or bypass authentication.'",
+      "fix": "Concrete step-by-step fix: 'Replace the string concatenation with parameterized queries using db.query(\"SELECT * FROM users WHERE name = $1\", [username]). Additionally, add input validation using a library like zod or joi to sanitize the username field before it reaches the database layer.'"
+    }
   ],
   "recommendations": [
-    { "priority": "high|medium|low", "action": "Concrete action with file reference, e.g.: 'Add input validation middleware in api/routes.js — currently no request body validation for POST endpoints'" }
+    {
+      "priority": "high|medium|low",
+      "title": "Short title, e.g.: 'Add Request Validation Middleware'",
+      "description": "2-4 sentence explanation of what's missing, why it matters, and exactly how to implement it. Reference specific files. For example: 'The API routes in api/routes.js accept POST requests without any body validation. This means malformed or malicious payloads reach the business logic layer unchecked. Add a validation middleware using zod schemas — create a schemas/ directory with one schema per endpoint, and apply them as middleware before each route handler.'",
+      "file": "exact/file/path.js or null"
+    }
   ],
   "generated_readme": "# Project Name\\n\\nFull markdown README with: description, features, tech stack, installation, usage, API docs (if applicable), contributing guidelines, and license section"
 }
 
-Scoring rubric for quality_score (0-10):
-  10: Production-grade, well-documented, secure, tested
-  7-9: Solid code, minor issues
-  4-6: Functional but has significant gaps
-  1-3: Prototype quality, major issues
-  0: Broken or empty
+SCORING RULES (quality_score):
+  - Start at 10, subtract points for each issue found:
+    - Each HIGH severity security flag: -1.0
+    - Each MEDIUM severity security flag: -0.5
+    - Each HIGH priority recommendation: -0.5
+    - No tests: -1.0, No CI/CD: -0.5, No docs: -0.5, No .env handling: -0.3
+  - Minimum score: 0. The score MUST reflect the issues — do NOT give a high score if many issues exist.
 
-IMPORTANT: Be thorough and specific. Vague findings like "improve error handling" are not useful. Instead say WHERE and HOW.`;
+IMPORTANT: Shallow one-liner findings are NOT acceptable. Every security flag must have a detailed description AND a concrete fix. Every recommendation must explain the problem and the solution in detail.`;
 }
 
 async function callAI(prompt, apiKey) {
@@ -252,7 +267,7 @@ async function callAI(prompt, apiKey) {
         { role: 'user', content: prompt }
       ],
       temperature: 0.3,
-      max_tokens: 4096,
+      max_tokens: 8192,
       response_format: { type: 'json_object' }
     }),
     30000,
