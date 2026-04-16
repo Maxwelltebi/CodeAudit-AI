@@ -7,9 +7,9 @@ import OpenAI from 'openai';
 // ============================================
 const GITHUB_API = 'https://api.github.com';
 
-const MAX_FILES_TO_ANALYZE = 6;
+const MAX_FILES_TO_ANALYZE = 10;
 const MAX_FILE_SIZE_BYTES = 100 * 1024; // 100KB per file
-const MAX_TOTAL_CHARS = 12000;          // Total char budget for prompt
+const MAX_TOTAL_CHARS = 25000;          // Total char budget for prompt
 const FUNCTION_TIMEOUT_MS = 25000;      // Hard timeout for the whole function
 
 const BINARY_EXTENSIONS = new Set([
@@ -177,8 +177,8 @@ async function fetchFileContents(files, owner, repo, token) {
 
 function buildPrompt(repoUrl, tree, files) {
   const treeStructure = tree
-    .filter(f => f.type === 'tree' || f.path.split('/').length <= 2)
-    .slice(0, 30)
+    .filter(f => f.type === 'tree' || f.path.split('/').length <= 3)
+    .slice(0, 60)
     .map(f => `${f.type === 'tree' ? '[dir]' : '[file]'} ${f.path}`)
     .join('\n');
 
@@ -186,30 +186,43 @@ function buildPrompt(repoUrl, tree, files) {
     .map(f => `=== ${f.path} ===\n${f.content}\n=== END ${f.path} ===`)
     .join('\n\n');
 
-  return `Analyze the following GitHub repository and return a structured code audit.
+  return `You are performing a deep, actionable code audit of a GitHub repository. Analyze the code carefully and provide specific, file-level findings that a developer can act on immediately.
 
 REPOSITORY: ${repoUrl}
 
-FILE TREE:
+FILE TREE (showing project structure):
 ${treeStructure}
 
-FILE CONTENTS:
+FILE CONTENTS (key files):
 ${filesContext}
+
+INSTRUCTIONS:
+- Reference SPECIFIC files and line-level details where possible (e.g., "In src/utils/auth.js, the token validation lacks expiry checking")
+- For security_flags, always specify which file the issue is in and describe exactly what the vulnerability is and how to fix it
+- For recommendations, be concrete — say exactly what to change, in which file, and why
+- For strengths, point to specific patterns or files that demonstrate good practices
+- The overview should mention the tech stack, purpose, and overall architecture quality
+- The architecture_summary should describe how components connect, data flows, and any design patterns used
+- The generated_readme should be comprehensive with install instructions, usage, and tech stack
 
 Return this exact JSON structure:
 {
-  "overview": "2-3 sentence project description",
+  "overview": "3-4 sentence project description covering purpose, tech stack, and overall quality assessment",
   "language": "primary programming language",
   "quality_score": 7.4,
-  "architecture_summary": "paragraph about code structure",
-  "strengths": ["strength 1", "strength 2", "strength 3"],
+  "architecture_summary": "Detailed paragraph about code organization, design patterns, component relationships, and data flow. Reference specific directories and files.",
+  "strengths": [
+    "Specific strength referencing file or pattern, e.g.: 'Clean separation of concerns in src/components/ with each component handling a single responsibility'",
+    "Another specific strength",
+    "At least 3-5 strengths"
+  ],
   "security_flags": [
-    { "severity": "high|medium|low", "issue": "description", "file": "filename or null" }
+    { "severity": "high|medium|low", "issue": "Specific description including file path and what the vulnerability is, e.g.: 'SQL injection risk in api/users.js line ~24: user input passed directly to query without sanitization'", "file": "exact/file/path.js" }
   ],
   "recommendations": [
-    { "priority": "high|medium|low", "action": "description" }
+    { "priority": "high|medium|low", "action": "Concrete action with file reference, e.g.: 'Add input validation middleware in api/routes.js — currently no request body validation for POST endpoints'" }
   ],
-  "generated_readme": "full markdown README string"
+  "generated_readme": "# Project Name\\n\\nFull markdown README with: description, features, tech stack, installation, usage, API docs (if applicable), contributing guidelines, and license section"
 }
 
 Scoring rubric for quality_score (0-10):
@@ -217,7 +230,9 @@ Scoring rubric for quality_score (0-10):
   7-9: Solid code, minor issues
   4-6: Functional but has significant gaps
   1-3: Prototype quality, major issues
-  0: Broken or empty`;
+  0: Broken or empty
+
+IMPORTANT: Be thorough and specific. Vague findings like "improve error handling" are not useful. Instead say WHERE and HOW.`;
 }
 
 async function callAI(prompt, apiKey) {
@@ -237,7 +252,7 @@ async function callAI(prompt, apiKey) {
         { role: 'user', content: prompt }
       ],
       temperature: 0.3,
-      max_tokens: 2048,
+      max_tokens: 4096,
       response_format: { type: 'json_object' }
     }),
     30000,
