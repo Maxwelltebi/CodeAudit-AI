@@ -223,16 +223,12 @@ Scoring rubric for quality_score (0-10):
 async function callAI(prompt, apiKey) {
   const client = new OpenAI({
     apiKey,
-    baseURL: 'https://openrouter.ai/api/v1',
-    defaultHeaders: {
-      'HTTP-Referer': 'https://codeaudit-ai.vercel.app',
-      'X-Title': 'CodeAudit AI'
-    }
+    baseURL: 'https://api.groq.com/openai/v1'
   });
 
-  const makeRequest = async () => {
-    const response = await client.chat.completions.create({
-      model: 'google/gemma-4-26b-a4b-it:free',
+  const response = await withTimeout(
+    client.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
       messages: [
         {
           role: 'system',
@@ -243,29 +239,19 @@ async function callAI(prompt, apiKey) {
       temperature: 0.3,
       max_tokens: 2048,
       response_format: { type: 'json_object' }
-    });
-    return response;
-  };
+    }),
+    30000,
+    'AI API request timed out'
+  );
 
-  // Retry up to 3 times on 429, with increasing backoff
-  let lastError;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const response = await withTimeout(makeRequest(), 55000, 'AI API request timed out');
-      const text = response.choices?.[0]?.message?.content;
-      if (!text) throw new Error('Empty response from AI');
-      return JSON.parse(text.trim());
-    } catch (err) {
-      lastError = err;
-      if (err.status === 429 && attempt < 2) {
-        console.log(`Rate limited, retrying in ${(attempt + 1) * 3}s...`);
-        await new Promise(r => setTimeout(r, (attempt + 1) * 3000));
-        continue;
-      }
-      throw err;
-    }
+  const text = response.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Empty response from AI');
+
+  try {
+    return JSON.parse(text.trim());
+  } catch {
+    throw new Error('AI returned invalid JSON');
   }
-  throw lastError;
 }
 
 // ============================================
@@ -360,10 +346,10 @@ export default async function handler(req, res) {
   console.log('Analyzing repository:', { owner, repo, url });
 
   const githubToken = process.env.GITHUB_TOKEN || null;
-  const aiApiKey = process.env.OPENROUTER_API_KEY;
+  const aiApiKey = process.env.GROQ_API_KEY;
 
   if (!aiApiKey) {
-    console.error('Missing OPENROUTER_API_KEY environment variable');
+    console.error('Missing GROQ_API_KEY environment variable');
     return res.status(500).json({ error: 'Server configuration error.' });
   }
 
@@ -432,7 +418,7 @@ export default async function handler(req, res) {
     } catch (err) {
       const status = err.status || err.response?.status;
       console.error('AI API error:', status, err.message);
-      if (status === 401 || status === 403) return res.status(403).json({ error: 'OpenRouter API key rejected. Check your OPENROUTER_API_KEY on Vercel.' });
+      if (status === 401 || status === 403) return res.status(403).json({ error: 'Groq API key rejected. Check your GROQ_API_KEY on Vercel.' });
       if (status === 429) return res.status(429).json({ error: 'AI rate limit exceeded. Please wait and try again.' });
       if (status >= 500) return res.status(502).json({ error: 'AI service is down. Please try again later.' });
       throw err;
