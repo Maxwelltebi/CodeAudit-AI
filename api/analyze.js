@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { z } from 'zod';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import OpenAI from 'openai';
 
 // ============================================
 // CONFIGURATION
@@ -221,28 +222,30 @@ Scoring rubric for quality_score (0-10):
 }
 
 async function callGemini(prompt, apiKey) {
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-2.5-flash',
-    generationConfig: {
-      temperature: 0.3,
-      maxOutputTokens: 2048,
-      responseMimeType: 'application/json'
-    }
+  const client = new OpenAI({
+    apiKey,
+    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
   });
 
-  const systemInstruction = 'You are an expert senior software engineer performing a code audit. Return ONLY valid JSON — no markdown, no explanation, no preamble, no code fences.';
-
   const response = await withTimeout(
-    model.generateContent({
-      systemInstruction,
-      contents: [{ role: 'user', parts: [{ text: prompt }] }]
+    client.chat.completions.create({
+      model: 'gemini-2.5-flash',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert senior software engineer performing a code audit. Return ONLY valid JSON — no markdown, no explanation, no preamble, no code fences.'
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 2048,
+      response_format: { type: 'json_object' }
     }),
-    50000,
+    55000,
     'Gemini API request timed out'
   );
 
-  const text = response.response?.text();
+  const text = response.choices?.[0]?.message?.content;
   if (!text) throw new Error('Empty response from Gemini');
 
   try {
