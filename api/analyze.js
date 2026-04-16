@@ -341,6 +341,7 @@ export default async function handler(req, res) {
 
   const owner = repoMatch[1];
   const repo = repoMatch[2];
+  console.log('Analyzing repository:', { owner, repo, url });
 
   const githubToken = process.env.GITHUB_TOKEN || null;
   const geminiApiKey = process.env.GEMINI_API_KEY;
@@ -363,9 +364,9 @@ export default async function handler(req, res) {
       );
     } catch (err) {
       const status = err.response?.status;
-      console.error('GitHub API error (repo metadata):', status, err.message);
+      console.error('GitHub API error (repo metadata):', { status, message: err.message, owner, repo, hasToken: !!githubToken });
       if (status === 401 || status === 403) return res.status(403).json({ error: 'GitHub access forbidden. Check your GITHUB_TOKEN permissions.' });
-      if (status === 404) return res.status(404).json({ error: 'Repository not found. Check the URL and ensure it is public.' });
+      if (status === 404) return res.status(404).json({ error: `Repository "${owner}/${repo}" not found on GitHub. Verify the URL is correct and the repo is public.` });
       if (status === 429) return res.status(429).json({ error: 'GitHub rate limit exceeded. Please wait and try again.' });
       throw err;
     }
