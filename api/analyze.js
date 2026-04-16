@@ -227,7 +227,8 @@ async function callGemini(prompt, apiKey) {
     generationConfig: {
       temperature: 0.3,
       maxOutputTokens: 4096,
-      responseMimeType: 'application/json'
+      responseMimeType: 'application/json',
+      thinkingConfig: { thinkingBudget: 0 }
     }
   });
 
@@ -238,7 +239,7 @@ async function callGemini(prompt, apiKey) {
       systemInstruction,
       contents: [{ role: 'user', parts: [{ text: prompt }] }]
     }),
-    26000,
+    50000,
     'Gemini API request timed out'
   );
 
