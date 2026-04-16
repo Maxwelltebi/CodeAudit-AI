@@ -1,6 +1,5 @@
 import axios from 'axios';
 import { z } from 'zod';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import OpenAI from 'openai';
 
 // ============================================
@@ -221,15 +220,15 @@ Scoring rubric for quality_score (0-10):
   0: Broken or empty`;
 }
 
-async function callGemini(prompt, apiKey) {
+async function callAI(prompt, apiKey) {
   const client = new OpenAI({
     apiKey,
-    baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/'
+    baseURL: 'https://openrouter.ai/api/v1'
   });
 
   const response = await withTimeout(
     client.chat.completions.create({
-      model: 'gemini-2.5-flash',
+      model: 'google/gemma-4-26b-a4b-it:free',
       messages: [
         {
           role: 'system',
@@ -242,16 +241,16 @@ async function callGemini(prompt, apiKey) {
       response_format: { type: 'json_object' }
     }),
     55000,
-    'Gemini API request timed out'
+    'AI API request timed out'
   );
 
   const text = response.choices?.[0]?.message?.content;
-  if (!text) throw new Error('Empty response from Gemini');
+  if (!text) throw new Error('Empty response from AI');
 
   try {
     return JSON.parse(text.trim());
   } catch {
-    throw new Error('Gemini returned invalid JSON');
+    throw new Error('AI returned invalid JSON');
   }
 }
 
@@ -301,7 +300,7 @@ function handleApiError(error, res) {
     }
   }
 
-  if (error.message?.includes('Gemini') || error.message?.includes('Empty response')) {
+  if (error.message?.includes('AI') || error.message?.includes('Empty response')) {
     return res.status(502).json({
       error: 'AI analysis failed. The model may be overloaded or the input was invalid.'
     });
@@ -347,10 +346,10 @@ export default async function handler(req, res) {
   console.log('Analyzing repository:', { owner, repo, url });
 
   const githubToken = process.env.GITHUB_TOKEN || null;
-  const geminiApiKey = process.env.GEMINI_API_KEY;
+  const aiApiKey = process.env.OPENROUTER_API_KEY;
 
-  if (!geminiApiKey) {
-    console.error('Missing GEMINI_API_KEY environment variable');
+  if (!aiApiKey) {
+    console.error('Missing OPENROUTER_API_KEY environment variable');
     return res.status(500).json({ error: 'Server configuration error.' });
   }
 
@@ -415,13 +414,13 @@ export default async function handler(req, res) {
     const prompt = buildPrompt(`${owner}/${repo}`, tree, filesContent);
     let rawAnalysis;
     try {
-      rawAnalysis = await callGemini(prompt, geminiApiKey);
+      rawAnalysis = await callAI(prompt, aiApiKey);
     } catch (err) {
       const status = err.status || err.response?.status;
-      console.error('Gemini API error:', status, err.message);
-      if (status === 401 || status === 403) return res.status(403).json({ error: 'Gemini API key rejected (401/403). Check your GEMINI_API_KEY on Vercel.' });
-      if (status === 429) return res.status(429).json({ error: 'Gemini API rate limit exceeded. Please wait and try again.' });
-      if (status >= 500) return res.status(502).json({ error: 'Gemini API is down. Please try again later.' });
+      console.error('AI API error:', status, err.message);
+      if (status === 401 || status === 403) return res.status(403).json({ error: 'OpenRouter API key rejected. Check your OPENROUTER_API_KEY on Vercel.' });
+      if (status === 429) return res.status(429).json({ error: 'AI rate limit exceeded. Please wait and try again.' });
+      if (status >= 500) return res.status(502).json({ error: 'AI service is down. Please try again later.' });
       throw err;
     }
 
